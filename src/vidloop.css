@@ -1,0 +1,22 @@
+/* CSS file */
+@namespace s "library://ns.adobe.com/flex/spark";
+@namespace mx "library://ns.adobe.com/flex/halo";
+
+global
+{
+	themeColor: #666666;
+	color: #BCBCBC;
+	disabledColor: #D4D4D4;
+}
+mx|Button
+{
+	color: #595959;
+	textSelectedColor: #3B3B3B;
+}
+mx|CheckBox
+{
+	color: #BCBCBC;
+	disabledColor: #D4D4D4;
+	textRollOverColor: #E4E4E4;
+	textSelectedColor: #BCBCBC;
+}

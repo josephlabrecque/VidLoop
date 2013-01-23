@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" width="400" height="520" 
+	creationComplete="init()" close="killWindow()" showStatusBar="false" 
+	backgroundGradientAlphas="[1.0, 1.0]" backgroundGradientColors="[#313131, #313131]" currentState="Start" 
+	applicationDeactivate="writeConfig()" >
+	<mx:Script>
+		<![CDATA[
+			import flash.filesystem.File;
+			import flash.events.Event;
+			import flash.display.Screen;
+			import VideoWindow;
+			import DataStore;
+			import flash.system.System;
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			import mx.managers.SystemManager;
+			import mx.core.mx_internal;
+			import air.update.events.UpdateEvent;
+			import air.update.ApplicationUpdaterUI;
+			
+			private var configControl:DataStore = new DataStore();
+			private var directory:File;
+			private var videoArray:Array;
+			private var vidWindow:VideoWindow;
+			private var mainScreen:Screen;
+			private var screenWidth:int;
+			private var screenHeight:int;
+			private var fileCount:int;
+			private var appUpdater:ApplicationUpdaterUI;
+			private var appManager:SystemManager;
+			
+			use namespace mx_internal;
+			
+			/*
+			1.4.x
+				+ add swf support
+				+ rescan directories
+				+ autostart checkbox
+				+ rewrote transitions mechanism
+			
+			
+			*/
+			
+			private function init():void {
+				runButton.enabled = false;
+				configControl.readConfig();
+				var savedDir:String = configControl.readDir();
+				var savedSec:String = configControl.readSec();
+				var savedPar:Boolean = configControl.readPar();
+				var savedImg:Boolean = configControl.readImg();
+				var savedRan:Boolean = configControl.readRan();
+				var savedIdl:Boolean = configControl.readIdl();
+				var savedAut:Boolean = configControl.readAut();
+				
+				dirCheckBox.selected = savedPar;
+				sizeCheckBox.selected = savedImg;
+				ranCheckBox.selected = savedRan;
+				idleCheckBox.selected = savedIdl;
+				autoCheckBox.selected = savedAut;
+				
+				directory = new File();
+				if(savedDir != ""){
+					directory.nativePath = savedDir;
+					directorySelected(new Event(Event.SELECT));
+				}else{
+					directory = File.desktopDirectory;
+				}
+				if(savedSec != ""){
+					timeLabel.text = "Image Play Duration ("+timeFormat(int(savedSec))+")";
+					secondsSlider.value = int(savedSec);
+				}
+				
+				//parseSubDirectory(directory);
+				
+				mainScreen = Screen.mainScreen;
+				screenWidth = mainScreen.bounds.width;
+				screenHeight = mainScreen.bounds.height;
+				
+				trace(NativeApplication.nativeApplication.publisherID);
+				
+				this.systemManager.addEventListener(FlexEvent.IDLE, userIdle);
+				
+				if(savedAut){
+					buildWindow();
+				}
+				
+				doUpdateCheck();
+			}
+			
+			private function userIdle(e:FlexEvent):void {
+				//3000 == 5 minutes
+				if(e.currentTarget.mx_internal::idleCounter == 3000){
+					if(idleCheckBox.selected){
+						buildWindow();
+					}
+				}
+			}
+			
+			
+			private function getAppVersion():String {
+				var appXml:XML = NativeApplication.nativeApplication.applicationDescriptor;
+				var ns:Namespace = appXml.namespace();
+				var appVersion:String = appXml.ns::version[0];
+				return appVersion;
+			}
+			
+			private function doUpdateCheck():void {
+				appUpdater = new ApplicationUpdaterUI();
+				appUpdater.updateURL = "http://ctl.du.edu/staff/josephlabrecque/VidLoop/update.xml";
+				appUpdater.addEventListener(UpdateEvent.INITIALIZED, onUpdate);
+				appUpdater.addEventListener(ErrorEvent.ERROR, onError);
+				appUpdater.isCheckForUpdateVisible = false;
+				appUpdater.initialize();
+			}
+			private function onUpdate(e:UpdateEvent):void {
+				appUpdater.checkNow();
+			}
+			private function onError(e:ErrorEvent):void {
+				Alert.show(e.toString());
+			}
+			
+			private function chooseDirectory():void {
+				directory.addEventListener(Event.SELECT, directorySelected);
+				directory.browseForDirectory("Choose Media Directory");
+			}
+			
+			private function parseSubDirectory(d:File):void {
+				var fileArray:Array = d.getDirectoryListing();
+				for(var i:int = 0; i<fileArray.length; i++){
+					if(fileArray[i].isDirectory == false && fileArray[i].extension != null){
+						var fileExt:String = fileArray[i].extension.toLowerCase();
+						if(fileExt == "flv" || fileExt == "f4v" || fileExt == "mp4" || fileExt == "m4v" || fileExt == "jpg" || fileExt == "jpeg" || fileExt == "gif" || fileExt == "png" || fileExt == "swf"){
+							videoArray.push(fileArray[i]);
+						}
+					}
+					if(fileArray[i].isDirectory && dirCheckBox.selected){
+						parseSubDirectory(fileArray[i]);
+					}else{
+						fileCount++;
+					}
+				}
+			}
+			
+			private function directorySelected(e:Event):void {
+				if(directory.exists){
+					fileCount = 0;
+					videoArray = new Array();
+					directoryPath.text = directory.nativePath;
+					parseSubDirectory(directory);
+					fileInfo.text = "Your chosen directories contain " + fileCount + " total files.\n"
+					fileInfo.text += videoArray.length + " of these files will be included in the loop."
+					if(videoArray.length > 0) {
+						runButton.enabled = true;
+					}else{
+						runButton.enabled = false;
+					}
+					writeConfig();
+				}
+			}
+			
+			private function buildWindow():void {
+				//trace(videoArray.length);
+				if(ranCheckBox.selected){
+					videoArray.sort(randomSort);
+				}
+				if (vidWindow != null){
+					killWindow();
+				}
+				//trace(videoArray.length);
+				
+				vidWindow = new VideoWindow();
+				vidWindow.type = "utility";
+				vidWindow.systemChrome = "none";
+				vidWindow.transparent = true;
+				
+				
+				
+				
+				
+				
+				vidWindow.open();
+				
+				//vidWindow.maximize();
+				
+				vidWindow.width = Screen.mainScreen.bounds.width; 
+				vidWindow.height = Screen.mainScreen.bounds.height;
+				
+				vidWindow.move(Screen.mainScreen.bounds.x, Screen.mainScreen.bounds.y);
+				vidWindow.initPlayback(videoArray, secondsSlider.value);
+				
+				writeConfig();
+			}
+			
+			public function killWindow():void {
+				if (vidWindow != null){
+					vidWindow.close();
+					vidWindow = null;
+				}
+			}
+			
+			private function writeConfig():void {
+				configControl.writeConfig(directory.nativePath, secondsSlider.value, dirCheckBox.selected, sizeCheckBox.selected, ranCheckBox.selected, idleCheckBox.selected, autoCheckBox.selected);
+			}
+			
+			private function timeFormat(raw_seconds:int):String {
+				var hours:int = Math.floor(raw_seconds/3600);
+				var minutes:int = Math.floor((raw_seconds-(hours*3600))/60);
+				var seconds:int = Math.floor(raw_seconds%60);
+				var newSeconds:String = "";
+				if (seconds<10) {
+					newSeconds = "0"+seconds;
+				}else{
+					newSeconds = seconds.toString();
+				}
+				var time_string:String = minutes+":"+newSeconds;
+				timeLabel.text = "Image Play Duration ("+time_string+")"
+				return time_string;
+			}
+			
+			private function randomSort(a:Object, b:Object):Number {
+				var num:Number = Math.round(Math.random()*2)-1;
+				return num;
+			}
+		]]>
+	</mx:Script>
+	
+	<mx:Style source="vidloop.css"/>
+	
+	<mx:states>
+		<mx:State name="Info">
+			<mx:AddChild position="lastChild">
+				<mx:Canvas x="0" y="0" width="400" height="520" backgroundColor="#000000" backgroundAlpha="0.85" click="{currentState='Start'}">
+					<mx:Label x="10" y="10" text="About this Software" id="infoLabel" fontSize="19"/>
+					<mx:Text x="10" y="47" text="The VidLoop application allows a user to specify a directory of media files in order to present them within a semi-infinite loop.&#xa;&#xa;File types that are supported are as follows...&#xa;&#xa;VIDEO: flv, f4v, mp4, m4v&#xa;&#xa;IMAGE: jpg, jpeg, gif, png&#xa;&#xa;FLASH: swf&#xa;&#xa;The user is able to adjust certain settings based on the controls presented.  This includes the amount of time images are to persist on the screen, whether or not to scale these images up to fill the screen, the local directory to pull media from, and whether or not to parse subdirectories.&#xa;&#xa;All settings are saved upon each use.&#xa;&#xa;Hit ESCAPE to stop a presentation.&#xa;&#xa;CLICKING will step through each item and can be used to skip ahead regardless of video length or image duration settings.&#xa;&#xa;For further information, please contact:&#xa;&#xa;Joseph Labrecque&#xa;Senior Multimedia Application Developer&#xa;University of Denver&#xa;&#xa;Joseph.Labrecque@du.edu" width="380" height="443" fontWeight="bold" selectable="false"/>
+				</mx:Canvas>
+			</mx:AddChild>
+		</mx:State>
+		<mx:State name="Start">
+			<mx:AddChild position="lastChild">
+				<mx:Text x="244" y="39" text="{getAppVersion()}" enabled="false" color="#515151" fontSize="8" fontWeight="normal"/>
+			</mx:AddChild>
+		</mx:State>
+	</mx:states>
+	
+	<mx:Image source="assets/skin.png" left="0" right="0" top="0" bottom="0" maintainAspectRatio="false"/>
+	<mx:Button x="278" y="272" label="Browse" id="directoryButton" click="chooseDirectory()" width="110" cornerRadius="1" height="25" fontSize="12" icon="@Embed(source='assets/dir.png')"/>
+	<mx:Label x="10" y="270" text="Choose a Media Directory" id="directoryLabel" fontSize="19" width="260" textAlign="left"/>
+	<mx:Button x="10" y="378" width="378" height="110" id="runButton" cornerRadius="10" fontSize="36" click="buildWindow()" fontFamily="Arial" icon="@Embed(source='assets/loop.png')" fontStyle="normal"/>
+	<mx:Label x="10" y="307" width="378" id="directoryPath" fontFamily="Verdana"/>
+	<mx:Label y="494" text="(hit escape to exit loop - click to advance forward)" id="escLabel" horizontalCenter="0" width="379" textAlign="center" color="#7B7B7B"/>
+	<mx:Text x="10" y="334" width="378" height="41" id="fileInfo">
+		<mx:text>First, mark your options and choose a directory where the media files are stored.</mx:text>
+	</mx:Text>
+	<mx:Label x="10" y="127" text="Image Play Duration (0:30)" id="timeLabel" fontSize="10" width="164" textAlign="left"/>
+	<mx:Label x="10" y="91" text="Playback Configuration" id="optionsLabel" fontSize="19" width="378" textAlign="left"/>
+	<mx:HSlider x="182" y="124" width="206" value="30" id="secondsSlider" change="timeFormat(secondsSlider.value)" allowTrackClick="true" minimum="5" maximum="300" snapInterval="1" showDataTip="false" liveDragging="true"/>
+	<mx:CheckBox x="10" y="154" label="Resize image media to screen constraints" selected="true" id="sizeCheckBox"/>
+	<mx:CheckBox x="10" y="176" label="Gather media from nested directories" id="dirCheckBox" selected="true" click="directorySelected(event)"/>
+	<mx:CheckBox x="10" y="197" label="Randomize media playback" id="ranCheckBox" selected="false"/>
+	<mx:Image x="372" y="10" source="assets/icon_info.png" id="infoIcon" click="{currentState='Info'}" alpha="0.7"/>
+	<mx:CheckBox x="10" y="217" label="Run when idle for 5 minutes" id="idleCheckBox" selected="false"/>
+	<mx:CheckBox x="10" y="237" label="Auto-start loop" id="autoCheckBox" selected="false"/>
+</mx:WindowedApplication>

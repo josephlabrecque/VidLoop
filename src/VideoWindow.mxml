@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Window xmlns:mx="http://www.adobe.com/2006/mxml" showFlexChrome="false" alwaysInFront="true" 
+		   click="{nextVideo(new Object())}" xmlns:ctl="*" layout="absolute" 
+		   horizontalScrollPolicy="off" verticalScrollPolicy="off" backgroundColor="black" title="VidLoop Display">
+	<mx:Script>
+		<![CDATA[
+			import flash.display.BitmapData;
+			import flash.display.MovieClip;
+			import flash.events.Event;
+			import flash.events.FullScreenEvent;
+			import flash.events.KeyboardEvent;
+			import flash.events.SecurityErrorEvent;
+			import flash.events.TimerEvent;
+			import flash.system.Capabilities;
+			import flash.system.LoaderContext;
+			import flash.utils.Timer;
+			
+			import gs.TweenLite;
+			import gs.easing.*;
+			
+			import mx.core.Application;
+			import mx.core.BitmapAsset;
+			import mx.effects.Fade;
+			import mx.events.FlexEvent;
+			import mx.events.VideoEvent;
+			
+			private var flashContent:MovieClip;
+			private var currentIndex:int = 0;
+			private var mediaTimer:Timer;
+			private var mediaArray:Array = new Array();
+			private var currentMediaType:String;
+			private var fillBitmapData:BitmapData;
+			
+			
+			private function fireTimer(t:TimerEvent):void {
+				nextVideo(new Object());
+			}
+			
+			public function initPlayback(a:Array, s:int):void {
+				Mouse.hide();
+				flashContent = new MovieClip();
+				var loaderContext:LoaderContext = new LoaderContext();
+				loaderContext.allowLoadBytesCodeExecution = true;
+				flashArea.loaderContext = loaderContext;
+				
+				fillBitmapData = new BitmapData(this.width, this.height, false, 0x000000);
+				mediaArray = a;
+				mediaTimer = new Timer(s*1000);
+				mediaTimer.addEventListener(TimerEvent.TIMER, fireTimer, false, 0, true);
+				videoArea.addEventListener(VideoEvent.COMPLETE, nextVideo, false, 0, true);
+				
+				switchMedia();
+				
+				stage.displayState = StageDisplayState.FULL_SCREEN;
+				stage.addEventListener(FullScreenEvent.FULL_SCREEN, displayStateChanged, false, 0, true);
+				//stage.addEventListener(KeyboardEvent.KEY_DOWN, kill, false, 0, true);
+			}
+			
+			private function displayStateChanged(e:FullScreenEvent):void {
+				//e.preventDefault();
+				//e.stopPropagation();
+				
+				//stage.displayState = StageDisplayState.FULL_SCREEN;
+				stage.removeEventListener(FullScreenEvent.FULL_SCREEN, displayStateChanged);
+				Mouse.show();
+				closeVideo();
+				close();
+			}
+			
+			private function securityErrorHandler(e:SecurityErrorEvent):void {
+				trace("bing!");
+			}
+			
+			private function kill(e:KeyboardEvent):void {
+				trace("keyCode: ", e.keyCode)
+				if(e.keyCode == 27){
+					e.preventDefault();
+					Mouse.show();
+					closeVideo();
+					close();
+				}
+				/*
+				if(e.keyCode == 77 && e.ctrlKey && e.altKey){
+				commandEntered = true;
+				this.close();
+				}else if(e.keyCode == 27){
+				e.preventDefault();
+				commandEntered = false;
+				}else{
+				commandEntered = false;
+				}
+				*/
+				
+			}
+			
+			private function nextVideo(o:Object):void {
+				if(currentIndex < mediaArray.length-1){
+					currentIndex++;
+				}else{
+					currentIndex = 0;
+				}
+				switchMedia();
+			}
+			
+			private function switchMedia():void {
+				if(currentMediaType != null){
+					try{
+						fillBitmapData.draw(this);
+					}catch(e:*){
+						trace(e);
+					}
+					fillArea.source = new BitmapAsset(fillBitmapData);
+					fillArea.alpha = 1;
+				}
+				
+				switch(currentMediaType){
+					case "video":
+						videoArea.visible = false;
+						videoArea.stop();
+						//videoArea.close();
+						videoArea.source = null;
+						break;
+					case "image":
+						mediaTimer.stop();
+						stillArea.visible = false;
+						stillArea.source = null;
+						break;
+					case "flash":
+						flashArea.visible = false;
+						flashArea.unloadAndStop(true);
+						flashArea.source = null;
+						break;
+					default:
+						break;
+				}
+				
+				
+				var fileExt:String = mediaArray[currentIndex].extension.toLowerCase();
+				if(fileExt == "flv" || fileExt == "f4v" || fileExt == "mp4" || fileExt == "m4v"){
+					currentMediaType = "video";
+					videoArea.source = mediaArray[currentIndex].url;
+					videoArea.play();
+					stillArea.visible = false;
+					flashArea.visible = false;
+					videoArea.visible = true;
+				}else if(fileExt == "jpg" || fileExt == "jpeg" || fileExt == "gif" || fileExt == "png"){
+					currentMediaType = "image";
+					stillArea.source = mediaArray[currentIndex].url;
+					mediaTimer.start();
+					stillArea.visible = true;
+					flashArea.visible = false;
+					videoArea.visible = false;
+				}else if(fileExt == "swf"){
+					currentMediaType = "flash";
+					flashArea.source = mediaArray[currentIndex].url;
+					flashArea.addEventListener(Event.ENTER_FRAME, checkFlashFrames, false, 0, true);
+					stillArea.visible = false;
+					flashArea.visible = true;
+					videoArea.visible = false;
+				}
+				
+				TweenLite.to(fillArea, 0.8, {alpha:0, ease:Sine.easeOut, onComplete:clearFill});
+				
+			}
+			
+			private function clearFill():void {
+				fillBitmapData.draw(blackness);
+			}
+			
+			private function checkFlashFrames(e:Event):void {
+				if(e.target.content is AVM1Movie){
+					nextVideo(new Object());
+					e.target.content.removeEventListener(Event.ENTER_FRAME, checkFlashFrames, false);
+				}else{
+					if(e.target.content != null){
+						flashContent = e.target.content;
+						if(flashContent.currentFrame == flashContent.totalFrames-5){
+							nextVideo(new Object());
+							flashContent.removeEventListener(Event.ENTER_FRAME, checkFlashFrames, false);
+						}
+					}
+				}
+			}
+			
+			private function closeVideo():void {
+				if(flashArea.source != null){
+					flashArea.unloadAndStop(true);
+				}
+				if(videoArea.source != null){
+					videoArea.stop();
+					videoArea.close();
+					videoArea.source = null;
+					videoArea.mx_internal::videoPlayer.clear();
+				}
+			}
+			
+		]]>
+	</mx:Script>
+	
+	<mx:Canvas id="blackness" backgroundColor="0x000000" left="0" right="0" top="0" bottom="0"/>
+	
+	<mx:VideoDisplay id="videoArea" left="0" right="0" top="0" bottom="0" autoPlay="false"/>
+	<ctl:SmoothImage id="stillArea" left="0" right="0" top="0" bottom="0" verticalAlign="middle" horizontalAlign="center"/>
+	<mx:SWFLoader id="flashArea" mouseChildren="false" securityError="securityErrorHandler(event)" left="0" right="0" top="0" bottom="0"/>
+	
+	<mx:Image id="fillArea" left="0" right="0" top="0" bottom="0" alpha="0"/>
+	
+</mx:Window>
